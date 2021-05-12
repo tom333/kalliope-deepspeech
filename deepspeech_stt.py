@@ -10,9 +10,27 @@ import pyaudio
 import wave
 import webrtcvad
 from halo import Halo
+from kalliope.stt.Utils import SpeechRecognition
 from scipy import signal
 
 logging.basicConfig(level=20)
+
+
+class DeepSpeech(SpeechRecognition):
+
+    def __init__(self, callback=None, **kwargs):
+        SpeechRecognition.__init__(self, kwargs.get('audio_file_path', None))
+
+        self.main_controller_callback = callback
+        self.language = kwargs.get('language', "model-fr")
+        self.log_level = kwargs.get('log_level', -1)
+        self.grammar_file = kwargs.get('grammar_file', None)
+
+        self.set_callback(self.deepspeech_callback)
+        self.start_processing()
+
+    def deepspeech_callback(self, recognizer, audio_data):
+        pass
 
 
 class Audio(object):

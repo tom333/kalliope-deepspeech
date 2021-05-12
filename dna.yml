@@ -1,0 +1,10 @@
+---
+name: "deepspeech"
+type: "stt"
+author: "tom333"
+
+kalliope_supported_version:
+  - 0.7
+tags:
+  - "deepspeech"
+  - "stt"
