@@ -1,6 +1,9 @@
 import time, logging
 from datetime import datetime
 import threading, collections, queue, os, os.path
+
+from deepspeech import Model
+
 import deepspeech
 import numpy as np
 import pyaudio
@@ -10,6 +13,7 @@ from halo import Halo
 from scipy import signal
 
 logging.basicConfig(level=20)
+
 
 class Audio(object):
     """Streams raw audio from microphone. Data is received in a separate thread, and stored in a buffer, to be read from."""
@@ -87,17 +91,6 @@ class Audio(object):
 
     frame_duration_ms = property(lambda self: 1000 * self.block_size // self.sample_rate)
 
-    def write_wav(self, filename, data):
-        logging.info("write wav %s", filename)
-        wf = wave.open(filename, 'wb')
-        wf.setnchannels(self.CHANNELS)
-        # wf.setsampwidth(self.pa.get_sample_size(FORMAT))
-        assert self.FORMAT == pyaudio.paInt16
-        wf.setsampwidth(2)
-        wf.setframerate(self.sample_rate)
-        wf.writeframes(data)
-        wf.close()
-
 
 class VADAudio(Audio):
     """Filter & segment audio with voice activity detection."""
@@ -150,19 +143,16 @@ class VADAudio(Audio):
                     yield None
                     ring_buffer.clear()
 
+
 def main(ARGS):
     # Load DeepSpeech model
-    if os.path.isdir(ARGS.model):
-        model_dir = ARGS.model
-        ARGS.model = os.path.join(model_dir, 'output_graph.pb')
-        ARGS.scorer = os.path.join(model_dir, ARGS.scorer)
+    model_dir = "./models"
+    ARGS.model = os.path.join(model_dir, 'output_graph.pbmm')
+    ARGS.scorer = os.path.join(model_dir, 'kenlm.scorer')
 
     print('Initializing model...')
     logging.info("ARGS.model: %s", ARGS.model)
-    model = deepspeech.Model(ARGS.model)
-    if ARGS.scorer:
-        logging.info("ARGS.scorer: %s", ARGS.scorer)
-        model.enableExternalScorer(ARGS.scorer)
+    model = Model(ARGS.model)
 
     # Start audio with VAD
     vad_audio = VADAudio(aggressiveness=ARGS.vad_aggressiveness,
@@ -183,16 +173,13 @@ def main(ARGS):
             if spinner: spinner.start()
             logging.debug("streaming frame")
             stream_context.feedAudioContent(np.frombuffer(frame, np.int16))
-            if ARGS.savewav: wav_data.extend(frame)
         else:
             if spinner: spinner.stop()
             logging.debug("end utterence")
-            if ARGS.savewav:
-                vad_audio.write_wav(os.path.join(ARGS.savewav, datetime.now().strftime("savewav_%Y-%m-%d_%H-%M-%S_%f.wav")), wav_data)
-                wav_data = bytearray()
             text = stream_context.finishStream()
             print("Recognized: %s" % text)
             stream_context = model.createStream()
+
 
 if __name__ == '__main__':
     DEFAULT_SAMPLE_RATE = 16000
@@ -204,20 +191,14 @@ if __name__ == '__main__':
                         help="Set aggressiveness of VAD: an integer between 0 and 3, 0 being the least aggressive about filtering out non-speech, 3 the most aggressive. Default: 3")
     parser.add_argument('--nospinner', action='store_true',
                         help="Disable spinner")
-    parser.add_argument('-w', '--savewav',
-                        help="Save .wav files of utterences to given directory")
     parser.add_argument('-f', '--file',
                         help="Read from .wav file instead of microphone")
 
-    parser.add_argument('-m', '--model', required=True,
-                        help="Path to the model (protocol buffer binary file, or entire directory containing all standard-named files for model)")
-    parser.add_argument('-s', '--scorer',
-                        help="Path to the external scorer file.")
     parser.add_argument('-d', '--device', type=int, default=None,
                         help="Device input index (Int) as listed by pyaudio.PyAudio.get_device_info_by_index(). If not provided, falls back to PyAudio.get_default_device().")
     parser.add_argument('-r', '--rate', type=int, default=DEFAULT_SAMPLE_RATE,
                         help=f"Input device sample rate. Default: {DEFAULT_SAMPLE_RATE}. Your device may require 44100.")
 
     ARGS = parser.parse_args()
-    if ARGS.savewav: os.makedirs(ARGS.savewav, exist_ok=True)
+
     main(ARGS)
